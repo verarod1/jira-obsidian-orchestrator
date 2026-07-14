@@ -1,0 +1,4 @@
+python-dotenv
+markdown-it-py
+mcp
+requests
