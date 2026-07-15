@@ -1,0 +1,296 @@
+{
+  "sprint_name": "VK Notifications: Спринт 42 (Q3)",
+  "epics": [
+    {
+      "title": "Умная группировка пушей (Тред-лайн)",
+      "description": "Эпик по переходу на новую систему группировки уведомлений в треды (по аналогии с iMessage/Telegram). Цель: снизить визуальный шум в шторке устройства пользователя.",
+      "tasks": [
+        {
+          "title": "Backend: Схема данных для агрегации тредов",
+          "description": "Спроектировать схему в Cassandra для хранения thread_id и связей с конкретными пушами. Учесть TTL для старых уведомлений (30 дней).",
+          "role": "Backend",
+          "status": "Done",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "Backend: Ручка /method/notifications.getGrouping",
+          "description": "Разработать метод агрегации. Должен отдавать список thread_id и количество непрочитанных в каждом. Использовать кэш Tarantool.",
+          "role": "Backend",
+          "status": "In Review",
+          "estimated": true,
+          "priority": "High",
+          "mock_comment": "Авто-лог: Передано на ревью 08.07.2026. Жду аппрува от архитектора, есть сомнения по нагрузке на кэш."
+        },
+        {
+          "title": "Backend: Оптимизация запросов к Cassandra",
+          "description": "Переписать партиционирование таблиц уведомлений, текущие селекты работают за 200ms, нужно уложиться в 50ms.",
+          "role": "Backend",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "iOS: Верстка свернутой группы уведомлений",
+          "description": "Сверстать UI-компонент свернутой стопки. Максимальное количество аватарок в стопке - 3. Добавить счетчик \"+N\".",
+          "role": "iOS",
+          "status": "In Progress",
+          "estimated": true,
+          "priority": "Medium",
+          "mock_comment": "Блокер: Жду ручку агрегации от бэка. Пока нарисовал на моках, дальше двигаться не могу."
+        },
+        {
+          "title": "iOS: Логика разворачивания треда по тапу",
+          "description": "Реализовать аккордеон-анимацию при тапе на сгруппированный пуш. Подгрузка истории треда через пагинацию.",
+          "role": "iOS",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "iOS: Свайп-экшены для группы пушей",
+          "description": "Добавить действия \"Прочитать все\" и \"Скрыть группу\" при свайпе влево.",
+          "role": "iOS",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Low"
+        },
+        {
+          "title": "Android: Обработка silent-пушей для обновления счетчика",
+          "description": "Перехватывать data-пуши в фоне и инкрементить локальный счетчик на иконке приложения.",
+          "role": "Android",
+          "status": "Done",
+          "estimated": true,
+          "priority": "Medium",
+          "mock_comment": "Сделал. Но кэширование счетчиков в Room выпилил, не пролазим в оценку. Сделаем отдельной таской в следующем спринте."
+        },
+        {
+          "title": "Android: UI заглушки при пустом списке",
+          "description": "Добавить empty state \"У вас пока нет новых уведомлений\".",
+          "role": "Android",
+          "status": "Done",
+          "estimated": true,
+          "priority": "Low"
+        },
+        {
+          "title": "Android: Логика группировки по sender_id",
+          "description": "Написать локальный маппер, который будет склеивать пуши от одного паблика в один бандл (NotificationCompat.Builder.setGroup).",
+          "role": "Android",
+          "status": "In Progress",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "QA: Подготовка тест-кейсов по группировке",
+          "description": "Описать позитивные и негативные сценарии. Учесть отработку без интернета и конфликты пушей.",
+          "role": "QA",
+          "status": "Done",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "QA: Регресс ручек агрегации",
+          "description": "Проверить корректность группировки при получении 100+ пушей от одного паблика в секунду.",
+          "role": "QA",
+          "status": "Testing",
+          "estimated": true,
+          "priority": "High"
+        }
+      ]
+    },
+    {
+      "title": "Центр уведомлений (Редизайн колокольчика)",
+      "description": "Обновление UI экрана уведомлений внутри приложения. Переход на дизайн-систему VKUI 3.0.",
+      "tasks": [
+        {
+          "title": "Design: Подготовка ассетов для темной темы",
+          "description": "Собрать иконки реакций (лайк, коммент, репост) для Dark Mode и экспортировать в SVG/PDF.",
+          "role": "Design",
+          "status": "Done",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "iOS: Рефакторинг DataSource для списка",
+          "description": "Перевести старый UITableView на UICollectionView + DiffableDataSource для плавных анимаций удаления.",
+          "role": "iOS",
+          "status": "Done",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "iOS: Интеграция новых иконок реакций",
+          "description": "Заменить старые ассеты, настроить tintColor под текущую тему приложения.",
+          "role": "iOS",
+          "status": "In Progress",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "iOS: Анимация появления бейджа",
+          "description": "Добавить spring-анимацию при увеличении числа на красном бейдже.",
+          "role": "iOS",
+          "status": "To Do",
+          "estimated": false,
+          "priority": "Low",
+          "mock_comment": "Взяли в спринт без оценки, будем делать по остаточному принципу."
+        },
+        {
+          "title": "Android: Верстка ячейки 'Запрос в друзья'",
+          "description": "Сверстать новую ячейку с кнопками 'Принять' и 'Скрыть' прямо в списке уведомлений.",
+          "role": "Android",
+          "status": "In Progress",
+          "estimated": true,
+          "priority": "Medium",
+          "mock_comment": "Ушел в отпуск до 25.07. Таску пока не бросаю, доделаю как вернусь."
+        },
+        {
+          "title": "Android: Поддержка динамических шрифтов",
+          "description": "Обеспечить корректное масштабирование текста в уведомлениях при изменении системного размера шрифта.",
+          "role": "Android",
+          "status": "Done",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "Backend: Метод пометки всех как прочитанных",
+          "description": "Реализовать /method/notifications.markAllAsViewed. Должен асинхронно сбрасывать флаги.",
+          "role": "Backend",
+          "status": "Done",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "QA: Проверка отображения длинных имен",
+          "description": "Протестировать верстку ячеек при названиях сообществ длиной более 100 символов.",
+          "role": "QA",
+          "status": "Testing",
+          "estimated": true,
+          "priority": "High",
+          "mock_comment": "QA: Возвращаю баг 3-й раз. Текст все еще обрезается на iPhone SE и наезжает на иконку. Разработчик, посмотри аттачи."
+        },
+        {
+          "title": "QA: Проверка перехода по диплинкам из пуша",
+          "description": "Убедиться, что тап по пушу открывает нужный экран, а не только корень приложения.",
+          "role": "QA",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Medium"
+        }
+      ]
+    },
+    {
+      "title": "Инфраструктура и мониторинг доставки",
+      "description": "Перевод системы рассылки пушей на новую архитектуру для повышения доставляемости на 15%.",
+      "tasks": [
+        {
+          "title": "DevOps: Настроить сбор метрик доставки APNs",
+          "description": "Снимать HTTP/2 статусы от серверов Apple и складывать в ClickHouse.",
+          "role": "DevOps",
+          "status": "Done",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "DevOps: Дашборд в Grafana по потерянным пушам",
+          "description": "Собрать графики: разбивка по платформам, ошибки сертификатов, таймауты.",
+          "role": "DevOps",
+          "status": "In Progress",
+          "estimated": false,
+          "priority": "Medium",
+          "mock_comment": "Делаю без оценки, пока непонятно сколько времени займет сборка метрик из CH."
+        },
+        {
+          "title": "Backend: Перевод воркеров отправки на Go",
+          "description": "Переписать PHP-демоны отправки пушей на Go-рутины для снижения потребления памяти.",
+          "role": "Backend",
+          "status": "In Review",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "Backend: Тесты под нагрузкой (100k rps)",
+          "description": "Написать сценарии для Yandex.Tank, пробить целевой лимит по отправке.",
+          "role": "Backend",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Medium"
+        },
+        {
+          "title": "Обновить Wiki по формату payload для мобилок",
+          "description": "Задокументировать ключи словаря aps/data, которые мы сейчас шлем в пушах.",
+          "role": null,
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Low",
+          "mock_comment": "Нужно актуализировать доки после перехода на новую систему."
+        },
+        {
+          "title": "Согласовать SLA по времени доставки с продуктом",
+          "description": "Утвердить целевые тайминги (например, 99% пушей долетают за 2 секунды).",
+          "role": null,
+          "status": "To Do",
+          "estimated": false,
+          "priority": "Medium"
+        }
+      ]
+    },
+    {
+      "title": "Техдолг и Баги (Внеплановое)",
+      "description": "Инциденты и баги, добавленные в спринт по мере возникновения.",
+      "tasks": [
+        {
+          "title": "КРИТИЧНО: Не приходят пуши звонков VK после выгрузки",
+          "description": "Пользователи жалуются, что если убить приложение, входящий звонок не отображается. Проверить PushKit.",
+          "role": "iOS",
+          "status": "In Progress",
+          "estimated": true,
+          "priority": "Highest",
+          "mock_comment": "Вброшено из дежурства. Релиз блокирован. Разбираемся с VoIP сертификатами."
+        },
+        {
+          "title": "BUG: Дублирование пушей в Android 14",
+          "description": "Приходит два одинаковых уведомления, если пользователь находился в фоне больше часа.",
+          "role": "Android",
+          "status": "Done",
+          "estimated": true,
+          "priority": "Highest",
+          "mock_comment": "Исправил, дело было в неверном id канала (пересоздавался)."
+        },
+        {
+          "title": "iOS: Утечка памяти в Notification Service Extension",
+          "description": "Экстеншен падает по OOM (лимит 24 МБ) при попытке загрузить тяжелую картинку для пуша.",
+          "role": "iOS",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "Backend: OOM при массовой рассылке миллионника",
+          "description": "Падает подергиватель, если размер аудитории больше 5 млн.",
+          "role": "Backend",
+          "status": "In Review",
+          "estimated": true,
+          "priority": "High"
+        },
+        {
+          "title": "КРИТИЧНО: Отвалились метрики открытия пушей",
+          "description": "На дашбордах резкое падение Open Rate. События открытия не доходят до аналитики.",
+          "role": "QA",
+          "status": "Testing",
+          "estimated": true,
+          "priority": "Highest",
+          "mock_comment": "Аналитика жалуется. Локально сниффером вижу, что ивенты уходят. Ищу проблему на слое роутинга."
+        },
+        {
+          "title": "Очистить старые feature-тогглы из кода",
+          "description": "Удалить тогглы notifications_redesign_v1 и notifications_redesign_v2, код оставить включенным навсегда.",
+          "role": "iOS",
+          "status": "To Do",
+          "estimated": true,
+          "priority": "Lowest"
+        }
+      ]
+    }
+  ]
+}
