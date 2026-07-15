@@ -29,25 +29,28 @@ STATUS_MAPPING = {
 def load_mock_data(filepath="mock_sprint.json"):
     with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)
-    
+
+def create_adf_text(text):
+    return {
+        "version": 1,
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": text}
+                ]
+            }
+        ]
+    }
+
 def create_epic(title, description):
     url = f"{JIRA_URL}/rest/api/3/issue"
     payload = {
         "fields": {
             "project": {"key": PROJECT_KEY},
             "summary": title,
-            "description": {
-                "version": 1,
-                "type": "doc",
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [
-                            {"type": "text", "text": description}
-                        ]
-                    }
-                ]
-            },
+            "description": create_adf_text(description), 
             "issuetype": {"name": "Epic"},
             "labels": ["test-seed"]
         }
@@ -76,23 +79,18 @@ def create_task(epic_key, task):
         else:
             task_labels.append("unestimated")
             
+    title_lower = task["title"].lower()
+    if "bug" in title_lower:
+        issue_type = "Bug"
+    else:
+        issue_type = "Task"
+            
     payload = {
         "fields": {
             "project": {"key": PROJECT_KEY},
             "summary": task["title"],
-            "description": {
-                "version": 1,
-                "type": "doc",
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [
-                            {"type": "text", "text": task["description"]}
-                        ]
-                    }
-                ]
-            },
-            "issuetype": {"name": "Task"},
+            "description": create_adf_text(task["description"]),
+            "issuetype": {"name": issue_type},
             "parent": {"key": epic_key},
             "labels": task_labels
         }
@@ -106,28 +104,17 @@ def create_task(epic_key, task):
     
     if response.status_code == 201:
         task_key = response.json().get("key")
-        print(f"  Задача создана: {task_key} (привязана к {epic_key})")
+        print(f"  {issue_type} создана: {task_key} (привязана к {epic_key})")
         return task_key
     else:
-        print(f"  Ошибка создания задачи '{task['title']}': {response.text}")
+        print(f"  Ошибка создания {issue_type} '{task['title']}': {response.text}")
         return None
 
 def add_comment(issue_key, comment_text):
     url = f"{JIRA_URL}/rest/api/3/issue/{issue_key}/comment"
     
     payload = {
-        "body": {
-            "version": 1,
-            "type": "doc",
-            "content": [
-                {
-                    "type": "paragraph",
-                    "content": [
-                        {"type": "text", "text": comment_text}
-                    ]
-                }
-            ]
-        }
+        "body": create_adf_text(comment_text) 
     }
     
     response = requests.post(url, json=payload, headers=headers, auth=auth)
@@ -177,6 +164,7 @@ def transition_issue(issue_key, target_status):
     else:
         print(f"  ⚠️ Ошибка смены статуса {issue_key}: {post_response.text}")
 
+
 print("Начинаем генерацию песочницы...")
 data = load_mock_data()
 tasks_count = 0
@@ -198,13 +186,4 @@ for epic_data in data.get("epics", []):
                     add_comment(task_key, task_data["mock_comment"])
                     
 print(f"\nГенерация завершена. Успешно обработано задач: {tasks_count}")
-
-
-
-
-
-
-
-
-
 
