@@ -18,13 +18,14 @@ mcp = FastMCP("JiraTeamReviewServer")
 def search_issues(jql: str, max_results: int = 100) -> str:
     """
     Выполняет поиск задач в Jira по JQL запросу.
-    Используй это, чтобы найти нужные эпики или таски за спринт.
+    Возвращает полную сводку по задачам, включая исполнителя и последние комментарии.
+    Используй это для сбора контекста по спринтам, эпикам или ежедневным активностям.
     """
     url = f"{JIRA_URL}/rest/api/3/search" 
     payload = {
         "jql": jql,
         "maxResults": max_results,
-        "fields": ["summary", "status", "issuetype", "created"]
+        "fields": ["summary", "status", "issuetype", "created", "assignee", "comment"]
     }
     
     response = requests.post(url, json=payload, headers=HEADERS, auth=AUTH)
@@ -33,6 +34,23 @@ def search_issues(jql: str, max_results: int = 100) -> str:
         
     issues = response.json().get("issues", [])
     result = []
+    
+    def parse_adf(body):
+        if isinstance(body, dict):
+            text_parts = []
+            def extract_text(node):
+                if isinstance(node, dict):
+                    if node.get("type") == "text":
+                        text_parts.append(node.get("text", ""))
+                    for value in node.values():
+                        extract_text(value)
+                elif isinstance(node, list):
+                    for item in node:
+                        extract_text(item)
+            extract_text(body)
+            return "".join(text_parts).strip()
+        return str(body).strip()
+
     for issue in issues:
         key = issue.get('key', 'Без ключа')
         fields = issue.get('fields', {})
@@ -41,7 +59,26 @@ def search_issues(jql: str, max_results: int = 100) -> str:
         issuetype = fields.get('issuetype', {}).get('name', 'Неизвестно')
         created = fields.get('created', 'Неизвестно')
         
-        issue_str = f"[{key}] {summary} | Статус: {status} | Тип: {issuetype} | Создано: {created}"
+        assignee_data = fields.get('assignee')
+        assignee = assignee_data.get('displayName', 'Не назначен') if assignee_data else 'Не назначен'
+        
+        comment_bundle = fields.get('comment', {})
+        comments_list = comment_bundle.get('comments', [])
+        
+        recent_comments = comments_list[-2:] if comments_list else []
+        comments_str_list = []
+        
+        for c in recent_comments:
+            author = c.get('author', {}).get('displayName', 'Неизвестный автор')
+            text = parse_adf(c.get('body', ''))
+            comments_str_list.append(f"[{author}]: {text}")
+            
+        comments_summary = " | ".join(comments_str_list) if comments_str_list else "Нет комментариев"
+        
+        issue_str = (
+            f"[{key}] {summary} | Статус: {status} | Тип: {issuetype} | "
+            f"Исполнитель: {assignee} | Создано: {created} | Последние комментарии: {comments_summary}"
+        )
         result.append(issue_str)
         
     if not result:
@@ -53,8 +90,8 @@ def search_issues(jql: str, max_results: int = 100) -> str:
 @mcp.tool()
 def get_comments(issue_key: str) -> str:
     """
-    Получает список комментариев для конкретной задачи Jira по её ключу (например, VKNOTIF-42).
-    Помогает узнать обсуждения команды и контекст по зависшим или спорным задачам.
+    Получает полный список комментариев для конкретной задачи Jira по её ключу (например, VKNOTIF-42).
+    Используй только если контекста из поиска задач оказалось недостаточно.
     """
     url = f"{JIRA_URL}/rest/api/3/issue/{issue_key}/comment"
     
@@ -66,18 +103,12 @@ def get_comments(issue_key: str) -> str:
     result = []
     
     for comment in comments_data:
-        # Получаем имя автора комментария (с поддержкой разных форматов Jira API)
         author_info = comment.get("author", {})
         author_name = author_info.get("displayName", "Неизвестный автор")
-        
-        # Получаем тело комментария. В Jira Cloud API v3 текст часто приходит в формате ADF (JSON).
-        # Для простоты извлечем плоский текст или зачитаем строковое поле body, если оно есть.
         body = comment.get("body", "")
         
-        # Если body содержит ADF-документ (словарь), вытащим из него только текстовые куски:
         if isinstance(body, dict):
             text_parts = []
-            # Простейший парсинг ADF структуры
             def extract_text(node):
                 if isinstance(node, dict):
                     if node.get("type") == "text":
@@ -93,7 +124,6 @@ def get_comments(issue_key: str) -> str:
             comment_text = str(body).strip()
             
         created = comment.get("created", "Неизвестно")
-        
         result.append(f"Автор: {author_name} ({created})\nКомментарий: {comment_text}\n---")
         
     if not result:
