@@ -15,17 +15,18 @@ HEADERS = {"Accept": "application/json", "Content-Type": "application/json"}
 mcp = FastMCP("JiraTeamReviewServer")
 
 @mcp.tool()
-def search_issues(jql: str, max_results: int = 100) -> str:
+def search_issues(jql: str, max_results: int = 40) -> str:
     """
     Выполняет поиск задач в Jira по JQL запросу.
     Возвращает полную сводку по задачам, включая исполнителя и последние комментарии.
     Используй это для сбора контекста по спринтам, эпикам или ежедневным активностям.
     """
-    url = f"{JIRA_URL}/rest/api/3/search" 
+    safe_max_results = min(max_results, 40)
+    url = f"{JIRA_URL}/rest/api/3/search/jql" 
     payload = {
         "jql": jql,
-        "maxResults": max_results,
-        "fields": ["summary", "status", "issuetype", "created", "assignee", "comment"]
+        "maxResults": safe_max_results,
+        "fields": ["summary", "status", "issuetype", "created", "assignee", "comment", "labels"]
     }
     
     response = requests.post(url, json=payload, headers=HEADERS, auth=AUTH)
@@ -61,7 +62,9 @@ def search_issues(jql: str, max_results: int = 100) -> str:
         
         assignee_data = fields.get('assignee')
         assignee = assignee_data.get('displayName', 'Не назначен') if assignee_data else 'Не назначен'
-        
+        raw_labels = fields.get('labels', [])
+        clean_labels = [lbl for lbl in raw_labels if lbl != "test-seed"]
+        labels_str = ", ".join(clean_labels) if clean_labels else "Нет меток"
         comment_bundle = fields.get('comment', {})
         comments_list = comment_bundle.get('comments', [])
         
@@ -76,7 +79,7 @@ def search_issues(jql: str, max_results: int = 100) -> str:
         comments_summary = " | ".join(comments_str_list) if comments_str_list else "Нет комментариев"
         
         issue_str = (
-            f"[{key}] {summary} | Статус: {status} | Тип: {issuetype} | "
+            f"[{key}] {summary} | Статус: {status} | Тип: {issuetype} | Метки: {labels_str} | "
             f"Исполнитель: {assignee} | Создано: {created} | Последние комментарии: {comments_summary}"
         )
         result.append(issue_str)
