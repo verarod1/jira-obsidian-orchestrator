@@ -1,14 +1,13 @@
 import os
 import re
 import asyncio
+import json
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-import json
 
 load_dotenv()
 
@@ -150,11 +149,6 @@ class AIAgent:
                                 "content": result_text
                             })
                                 
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": result_text
-                            })
                     else:
                         final_text = self._clean_output(assistant_message.content)
                         print(f"[LLM] Финальный ответ получен.")
@@ -220,7 +214,7 @@ class AnalyticsApp:
 
 async def main():
     if not Config.API_KEY:
-        print("Ошибка: GROQ_API_KEY не найден в переменных окружения.")
+        print("Ошибка: OPENROUTER_API_KEY не найден в переменных окружения.")
         return
 
     agent = AIAgent(
