@@ -26,11 +26,11 @@ type: daily-note
 ---
 # Заметка за {date_str}
 
-## ☕ Авто-Standup (AI)
+## Авто-Standup (AI)
 
-## 📊 Стратегический статус
+## Стратегический статус
 
-## 🎯 Ретроспектива
+## Ретроспектива
 """
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(template)
@@ -54,7 +54,7 @@ def read_markdown_file(filename: str = None) -> str:
 @mcp.tool()
 def update_note(
     new_content: str, 
-    target_heading: str = "☕ Авто-Standup (AI)",
+    target_heading: str = "Авто-Standup (AI)",
     filename: str = None
 ) -> str:
     """
