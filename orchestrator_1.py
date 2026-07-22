@@ -5,19 +5,19 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 from dotenv import load_dotenv
-
-import httpx
 import openai
+import httpx
 from openai import AsyncOpenAI
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from contextlib import AsyncExitStack
 
 load_dotenv()
 
 
 class Config:
     """Конфигурация приложения."""
-    MODEL_ID: str = "qwen/qwen3-32b"
+    MODEL_ID: str = "qwen/qwen3-next-80b-a3b-thinking"
     BASE_URL: str = "https://openrouter.ai/api/v1"
     API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
 
@@ -27,85 +27,93 @@ class PromptManager:
     
     @staticmethod
     def get_standup_prompt() -> str:
-        return """ТТы ИИ-аналитик кросс-функциональной команды. Работаешь в цикле ReAct.
-Твоя задача — сформировать ежедневную сводку активности (Ежедневная сводка).
-Используй доступные инструменты (Jira) для поиска задач, которые были обновлены за указанный пользователем период.
+        return """Ты ИИ-аналитик кросс-функциональной команды. Работаешь в цикле ReAct.
+Твоя задача — сформировать ежедневную сводку активности. Используй доступные инструменты для поиска задач (Jira) и записи отчета в файл (Obsidian).
 
 Сформируй отчет в формате Markdown, который строго содержит:
 1. Выделенный прогресс по разработчикам (сдвиги статусов).
 2. Текущий фокус дня (задачи, находящиеся "В работе").
-3. Аномалии: проанализируй комментарии к задачам. Выдели как аномалии те тикеты, где в комментариях упоминаются проблемы, блокировки, баги, задержки или просьбы о помощи (например, "блокер", "ошибка", "застрял", "нужна помощь"). Если таких комментариев нет, скажи "Аномалий нет".
+3. Аномалии: проанализируй комментарии к задачам. Выдели как аномалии те тикеты, где в комментариях упоминаются проблемы, блокировки, баги, задержки или просьбы о помощи, а также затянувшееся ожидание на чьей-либо стороне. Если таких комментариев нет, скажи "Аномалий нет".
 
-ВАЖНО ДЛЯ ФОРМАТИРОВАНИЯ: Для структуры отчета используй ТОЛЬКО списки, жирный текст и заголовки уровня H3 (###) или ниже. 
-Тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать заголовки H1 (#) и H2 (##), а также писать или дублировать главный заголовок отчета. Начинай ответ сразу с сути.
-
-ВАЖНО: В JQL-запросах всегда заключай названия статусов, содержащие пробелы, в кавычки. Например: status = "In Progress"
+ДЛЯ ФОРМАТИРОВАНИЯ: Для структуры отчета используй ТОЛЬКО списки, жирный текст и заголовки уровня H3 (###) или ниже. 
+Тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать заголовки H1 (#) и H2 (##)
+ВАЖНО: В JQL-запросах всегда заключай названия статусов, содержащие пробелы, в кавычки.
 Не придумывай данные, опирайся только на ответ таск-трекера.
 
-ФИНАЛЬНЫЙ ШАГ: После формирования отчета ты ОБЯЗАН сохранить его в Obsidian, используя инструмент update_note.
-В вызове инструмента передай текст отчета в new_content и строго укажи target_heading="## ☕️ Авто-Standup (AI)".
-Никогда не передавай параметр filename в update_note — этот инструмент знает его."""
+ФИНАЛЬНЫЙ ШАГ (КРИТИЧЕСКИ ВАЖНО): Ты не имеешь права завершать работу, пока не сохранишь отчет в Obsidian!
+После формирования текста ты ОБЯЗАН вызвать инструмент update_note. 
+Тебе СТРОГО ЗАПРЕЩЕНО выдавать отчет как финальный текстовый ответ пользователю. Передай весь сгенерированный текст в параметр new_content инструмента update_note (target_heading="Авто-Standup (AI)").
+Никогда не передавай параметр filename"""
 
     @staticmethod
-    def get_epic_status_prompt() -> str:
-        today = datetime.now().strftime("%Y-%m-%d")
+    def get_epic_status_prompt(epic_filename: str) -> str:
         return f"""Ты ИИ-аналитик кросс-функциональной команды. Работаешь в цикле ReAct.
 Твоя задача — сформировать отчет по крупным задачам (Стратегический статус).
+Тебе нужно самостоятельно достать целевые приоритеты (Эпики) из базы знаний Obsidian. Для этого вызови инструмент read_markdown_file и СТРОГО передай параметр filename="{epic_filename}". 
+Затем отфильтруй Jira-поток и подсвети прогресс только по найденным целевым эпикам.
 
-1. Сначала прочитай файл 'TargetEpics.md', используя инструмент read_markdown_file.
-2. Найди прогресс указанных в нем эпиков в Jira через инструменты поиска.
-3. Сформируй итоговый отчет и запиши его в ежедневную заметку с именем '{today}.md' в секцию "## 📊 Стратегический статус", используя инструмент update_note.
+Сформируй отчет в формате Markdown, который строго содержит для КАЖДОГО целевого эпика:
+1. Заголовок эпика (например: `### 📌 **OT-XXX** Заголовок эпика`).
+2. Список задач эпика в формате: `- **ОТ-XXX** | Статус: **[Статус]** | Комментарии: [Текст]`. Если комментариев нет, не пиши это поле.
+3. Блок `**Прогресс**:` со списком процентов завершения по статусам.
 
-⚠️ СТРОГИЕ ПРАВИЛА ПОДСЧЕТА (Chain of Thought):
-Перед тем как писать отчет, для каждого эпика пересчитай все элементы в возвращенном отчете Jira:
-1. Посчитай **абсолютно каждую строку** с задачей ([OT-...]), которую вернул инструмент поиска. Это число является точным `Total`. Не округляй его и не пропускай задачи.
-2. Посчитай, у скольких из них статус равен "Done". Это `Completed`.
-3. Вычисли процент: (Completed / Total) * 100%, округлив до целого числа.
-4. В строке прогресса обязательно пиши формулу вида: `- **Прогресс**: X% (выполнено Completed из Total)`. Если Total расходится с длиной массива задач — пересчитай заново.
+ДЛЯ ФОРМАТИРОВАНИЯ: Для структуры отчета используй ТОЛЬКО списки, жирный текст и заголовки уровня H3 (###) или ниже. 
+Тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать заголовки H1 (#) и H2 (##).
+ВАЖНО ПО JQL:
+- В JQL-запросах всегда заключай названия статусов, содержащие пробелы, в кавычки.
+- Для поиска задач внутри эпика тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать устаревшее поле "Epic Link". Всегда используй оператор parent
+Не придумывай данные, опирайся только на ответ таск-трекера. Игнорируй задачи, не относящиеся к целевым эпикам.
 
-ВАЖНЫЕ ПРАВИЛА JQL:
-1. Для поиска задач внутри Эпика используй конструкцию: "Epic Link" = "КЛЮЧ-ЭПИКА" или parent = "КЛЮЧ-ЭПИКА".
-2. Всегда заключай названия статусов или полей с пробелами в кавычки.
-"""
+ФИНАЛЬНЫЙ ШАГ (КРИТИЧЕСКИ ВАЖНО): Ты не имеешь права завершать работу, пока не сохранишь отчет в Obsidian!
+После формирования текста ты ОБЯЗАН вызвать инструмент update_note. 
+Тебе СТРОГО ЗАПРЕЩЕНО выдавать отчет как финальный текстовый ответ пользователю. Передай весь сгенерированный текст в параметр new_content инструмента update_note (target_heading="Стратегический статус").
+Никогда не передавай параметр filename"""
 
     @staticmethod
-    def get_sprint_retro_prompt() -> str:
-        today = datetime.now().strftime("%Y-%m-%d")
+    @staticmethod
+    def get_sprint_retro_prompt(sprint_filename: str) -> str:
         return f"""Ты ИИ-аналитик кросс-функциональной команды. Работаешь в цикле ReAct.
 Твоя задача — подвести итоги цикла разработки (Ретроспектива).
+Тебе нужно самостоятельно достать цели текущего цикла из базы знаний Obsidian. Для этого вызови инструмент read_markdown_file и СТРОГО передай параметр filename="{sprint_filename}".
+Затем используй инструменты для агрегации всех завершенных и незавершенных задач за итерацию (Jira). 
+КРИТИЧЕСКИ ВАЖНО: Ты не имеешь права завершать работу, пока не сохранишь отчет в Obsidian! Тебе СТРОГО ЗАПРЕЩЕНО выдавать отчет как финальный текстовый ответ пользователю. Передай весь сгенерированный текст в параметр new_content инструмента update_note (target_heading="Ретроспектива").
+Никогда не передавай параметр filename
 
-АЛГОРИТМ РАБОТЫ:
-1. Сначала прочитай файл '{today}.md', используя инструмент read_markdown_file, найди в секции "## 🎯 Ретроспектива" заявленные цели спринта.
-2. Используй Jira-инструменты поиска для получения всех завершенных и незавершенных задач за итерацию.
-3. Сформируй итоговый отчет в формате Markdown и обнови секцию "## 🎯 Ретроспектива" в файле '{today}.md', используя инструмент update_note. Сохрани исходные пользовательские заметки под заголовком, обновив только выводы ИИ.
-
-Твой финальный отчет должен строго включать:
+Сформируй отчет в формате Markdown, который строго содержит:
 1. Сравнение фактического результата с заявленными целями.
-2. Выявление внеплановых задач (задачи, добавленные после старта цикла).
-3. Формирование списка задач-кандидатов на перенос в следующий цикл (незавершенные задачи).
+2. Выявление внеплановых задач (в названии или комментариях которой явно указано, что она внеплановая). Если таких задач нет — напиши "Внеплановых задач не обнаружено".
+3. Формирование списка незавершенных задач-кандидатов на перенос в следующий цикл (если есть задержка). Для каждой задачи кратко укажи причину переноса
+ДЛЯ ФОРМАТИРОВАНИЯ: Для структуры отчета используй ТОЛЬКО списки, жирный текст и заголовки уровня H3 (###) или ниже. 
+Тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать заголовки H1 (#) и H2 (##), а также писать или дублировать главный заголовок отчета.
 
-ВАЖНО: В JQL-запросах всегда заключай названия статусов, содержащих пробелы, в кавычки. Например: status = "In Progress"
-"""
+ВАЖНО ПО JQL:
+- В JQL-запросах всегда заключай названия статусов, содержащие пробелы, в кавычки.
+- Чтобы найти нужные задачи, используй гибридный подход:
+  1. Если в файле целей есть ключи задач/эпиков, используй их: "issueKey IN () OR parent IN ()".
+  2. Если ключей нет, а есть только текст (например, "Оптимизация запросов"), выдели ключевые слова и используй текстовый поиск: summary ~ "Оптимизация" OR text ~ "Оптимизация".
+Не придумывай данные, опирайся только на ответ таск-трекера.
 
+После формирования текста ты ОБЯЗАН вызвать инструмент update_note. """
 
 class AIAgent:
     """Класс для работы с LLM и выполнения цикла ReAct с поддержкой MCP."""
     
     def __init__(self, api_key: str, base_url: str, model_id: str):
-        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=30.0)
+        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model_id = model_id
-        # Параметры подключения к Jira MCP
-        self.jira_server_params = StdioServerParameters(
-            command="python",
-            args=["jira_mcp.py"], 
-            env=os.environ.copy()
-        )
-        # Параметры подключения к Obsidian MCP
-        self.obsidian_server_params = StdioServerParameters(
-            command="python",
-            args=["obsidian_mcp.py"], 
-            env=os.environ.copy()
-        )
+        
+        self.servers_config = {
+            "jira": StdioServerParameters(
+                command="python",
+                args=["jira_mcp.py"], 
+                env=os.environ.copy()
+            ),
+            "obsidian": StdioServerParameters(
+                command="python",
+                args=["obsidian_mcp.py"],
+                env=os.environ.copy()
+            )
+        }
 
     @staticmethod
     def _clean_output(text: Optional[str]) -> str:
@@ -133,94 +141,87 @@ class AIAgent:
         ]
 
         print(f"Старт оркестратора. Запрос: '{user_prompt}'\n")
-        print("[MCP] Запуск локальных серверов Jira и Obsidian...")
+        print("[MCP] Запуск локальных серверов...")
 
-        # Запуск параллельных MCP-сессий через контекстные менеджеры
-        async with stdio_client(self.jira_server_params) as (read_jira, write_jira), \
-                   stdio_client(self.obsidian_server_params) as (read_obsidian, write_obsidian):
-            
-            async with ClientSession(read_jira, write_jira) as jira_session, \
-                       ClientSession(read_obsidian, write_obsidian) as obsidian_session:
-                
-                await jira_session.initialize()
-                await obsidian_session.initialize()
-                
-                # Получаем списки инструментов из обоих серверов
-                jira_tools_resp = await jira_session.list_tools()
-                obsidian_tools_resp = await obsidian_session.list_tools()
-                
-                jira_tools = jira_tools_resp.tools
-                obsidian_tools = obsidian_tools_resp.tools
-                
-                # Запоминаем имена инструментов Obsidian для маршрутизации
-                obsidian_tool_names = {t.name for t in obsidian_tools}
-                
-                all_mcp_tools = jira_tools + obsidian_tools
-                openai_tools = [self._convert_mcp_to_openai_tool(t) for t in all_mcp_tools]
-                
-                print(f"[MCP] Инструменты подключены: {', '.join([t.name for t in all_mcp_tools])}\n")
+        async with AsyncExitStack() as stack:
+            tool_to_session = {} 
+            openai_tools = []
+            mcp_tools_names = []
 
-                for i in range(max_iterations):
-                    print(f"--- Итерация {i + 1} ---")
+            for server_name, server_params in self.servers_config.items():
+                try:
+                    read_stream, write_stream = await stack.enter_async_context(stdio_client(server_params))
+                    session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+                    await session.initialize()
                     
-                    # ✅ Безопасный вызов LLM с перехватом сетевых ошибок
-                    try:
-                        response = await self.client.chat.completions.create(
-                            model=self.model_id,
-                            messages=messages,
-                            temperature=0.3,
-                            max_tokens=2000,
-                            tools=openai_tools,
-                            tool_choice="auto",
-                            parallel_tool_calls=False
-                        )
-                    except (openai.APIConnectionError, httpx.ConnectError) as e:
-                        print(f"\n⚠️ Ошибка сети при обращении к LLM API: {e}")
-                        print("Проверьте VPN / DNS подключение и повторите попытку.")
-                        return "Запуск прерван из-за отсутствия сетевого соединения."
-                    
-                    assistant_message = response.choices[0].message
-                    messages.append(assistant_message)
-                    
-                    if hasattr(assistant_message, 'tool_calls') and assistant_message.tool_calls:
-                        print("[LLM] Запрошен вызов инструмента (Action).")
+                    mcp_tools_response = await session.list_tools()
+                    for tool in mcp_tools_response.tools:
+                        tool_to_session[tool.name] = session 
+                        mcp_tools_names.append(tool.name)
+                        openai_tools.append(self._convert_mcp_to_openai_tool(tool))
                         
-                        for tool_call in assistant_message.tool_calls:
-                            name = tool_call.function.name
-                            arguments = json.loads(tool_call.function.arguments)
-                            print(f"📡 [MCP] Выполнение '{name}' с параметрами: {arguments}")
+                    print(f"[MCP] Сервер '{server_name}' успешно подключен.")
+                except Exception as e:
+                    print(f"❌ [MCP] Ошибка инициализации сервера {server_name}: {e}")
+                    return f"Ошибка запуска среды: {e}"
+
+            print(f"\n[MCP] Доступные инструменты: {', '.join(mcp_tools_names)}\n")
+
+            for i in range(max_iterations):
+                print(f"--- Итерация {i + 1} ---")
+                
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=self.model_id,
+                        messages=messages,
+                        temperature=0.3,
+                        max_tokens=2000,
+                        tools=openai_tools,
+                        tool_choice="auto",
+                        parallel_tool_calls=False
+                    )
+                except (openai.APIConnectionError, httpx.ConnectError) as e:
+                    print(f"\n⚠️ Ошибка сети при обращении к LLM API: {e}")
+                    print("Проверьте VPN / DNS подключение и повторите попытку.")
+                    return "Запуск прерван из-за отсутствия сетевого соединения."
+                
+                assistant_message = response.choices[0].message
+                messages.append(assistant_message)
+                
+                if hasattr(assistant_message, 'tool_calls') and assistant_message.tool_calls:
+                    print("[LLM] Запрошен вызов инструмента (Action).")
+                    
+                    for tool_call in assistant_message.tool_calls:
+                        name = tool_call.function.name
+                        arguments = json.loads(tool_call.function.arguments)
+                        print(f"📡 [MCP] Выполнение '{name}' с параметрами: {arguments}")
+                        
+                        try:
+                            target_session = tool_to_session.get(name)
+                            if not target_session:
+                                raise ValueError(f"Инструмент '{name}' не найден.")
+                                
+                            mcp_result = await target_session.call_tool(name, arguments)
+                            result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
+                        except Exception as tool_err:
+                            result_text = f"Ошибка выполнения {name}: {tool_err}"
+                            print(f"❌ [MCP] {result_text}")
                             
-                            try:
-                                # Динамическая маршрутизация вызова в нужный MCP сервер
-                                if name in obsidian_tool_names:
-                                    target_session = obsidian_session
-                                    server_label = "Obsidian"
-                                else:
-                                    target_session = jira_session
-                                    server_label = "Jira"
+                        print(f"📥 [RESPONSE]: {result_text[:300]}...")
 
-                                mcp_result = await target_session.call_tool(name, arguments)
-                                result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
-                            except Exception as tool_err:
-                                result_text = f"Ошибка MCP API: {tool_err}"
-                                print(f"❌ [MCP] {result_text}")
-                                
-                            print(f"📥 [{server_label.upper()} RESPONSE]: {result_text[:300]}...")
-
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": result_text
-                            })
-                                
-                    else:
-                        final_text = self._clean_output(assistant_message.content)
-                        print(f"[LLM] Финальный ответ получен.")
-                        return final_text
-                        
-                print("Достигнут лимит итераций.")
-                return "Ошибка: Не удалось завершить задачу за отведенное число шагов."
-
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result_text
+                        })
+                            
+                else:
+                    final_text = self._clean_output(assistant_message.content)
+                    print(f"[LLM] Финальный ответ получен.")
+                    return final_text
+                    
+            print("Достигнут лимит итераций.")
+            return "Ошибка: Не удалось завершить задачу за отведенное число шагов."
 
 class AnalyticsApp:
     """Главный класс приложения для взаимодействия с пользователем."""
@@ -230,7 +231,7 @@ class AnalyticsApp:
         self.prompts = PromptManager()
 
     async def _handle_standup(self) -> tuple[str, str]:
-        target_date = (datetime.now()).strftime("%Y-%m-%d")    #указано минус 15 дней, тк нет актуальных задач сейчас
+        target_date = (datetime.now()-timedelta(days=1)).strftime("%Y-%m-%d")    
             
         system_prompt = self.prompts.get_standup_prompt()
         user_prompt = f"Собери данные и сформируй отчет за период начиная с {target_date}."
@@ -238,13 +239,13 @@ class AnalyticsApp:
 
     async def _handle_epic(self) -> tuple[str, str]:
         print("[Система] Задача передана агенту: ИИ самостоятельно запросит приоритеты...")
-        system_prompt = self.prompts.get_epic_status_prompt()
+        system_prompt = self.prompts.get_epic_status_prompt(epic_filename="priorities.md")
         user_prompt = "Проанализируй статус по крупным задачам."
         return system_prompt, user_prompt
 
     async def _handle_retro(self) -> tuple[str, str]:
         print("[Система] Задача передана агенту: ИИ самостоятельно запросит цели цикла...")
-        system_prompt = self.prompts.get_sprint_retro_prompt()
+        system_prompt = self.prompts.get_sprint_retro_prompt(sprint_filename="goals.md")
         user_prompt = "Агрегируй данные и сформируй отчет для ретроспективы."
         return system_prompt, user_prompt
 
@@ -288,7 +289,6 @@ async def main():
     app = AnalyticsApp(agent)
     
     await app.run()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
