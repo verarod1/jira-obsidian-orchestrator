@@ -15,12 +15,12 @@ HEADERS = {"Accept": "application/json", "Content-Type": "application/json"}
 mcp = FastMCP("JiraTeamReviewServer")
 
 @mcp.tool()
-@mcp.tool()
 def search_issues(jql: str, max_results: int = 40, include_comments: bool = False) -> str:
     """
     Выполняет поиск задач в Jira по JQL запросу.
     Возвращает сводку по задачам. Если include_comments=True, добавляет последние комментарии.
-    Используй include_comments=True ТОЛЬКО для подготовки ежедневной сводки (Standup).
+    Используй include_comments=True ТОЛЬКО для подготовки ежедневной сводки (Standup) и отчета по крупным задачам (Epic).
+    Для ретроспективы (Sprint Retro) вызов с include_comments=True КАТЕГОРИЧЕСКИ ЗАПРЕЩЕН.
     """
     safe_max_results = min(max_results, 40)
     url = f"{JIRA_URL}/rest/api/3/search/jql" 
@@ -99,7 +99,6 @@ def search_issues(jql: str, max_results: int = 40, include_comments: bool = Fals
         
     return "\n".join(result)
 
-
 @mcp.tool()
 def get_comments(issue_key: str) -> str:
     """
@@ -143,7 +142,6 @@ def get_comments(issue_key: str) -> str:
         return f"У задачи {issue_key} нет комментариев."
         
     return "\n".join(result)
-
 
 if __name__ == "__main__":
     mcp.run()
