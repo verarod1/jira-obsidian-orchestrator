@@ -47,7 +47,7 @@ class AIAgent:
             }
         }
 
-    async def run_loop(self, system_prompt: str, user_prompt: str, max_iterations: int = 10) -> str:
+    async def run_loop(self, system_prompt: str, user_prompt: str, max_iterations: int = 20) -> str:
         """Оркестратор: запускает MCP-серверы и цикл взаимодействия с моделью."""
         messages = [
             {"role": "system", "content": system_prompt},
@@ -130,7 +130,27 @@ class AIAgent:
                     
                     for tool_call in assistant_message.tool_calls:
                         name = tool_call.function.name
-                        arguments = json.loads(tool_call.function.arguments)
+                        
+                        # Безопасный парсинг аргументов с защитой от сбоя провайдера API
+                        try:
+                            arguments = json.loads(tool_call.function.arguments)
+                        except json.JSONDecodeError as json_err:
+                            print(f"❌ [LLM] Ошибка парсинга аргументов инструмента '{name}': {json_err}")
+                            
+                            tool_call.function.arguments = "{}"
+                            
+                            result_text = (
+                                f"Ошибка: Твои аргументы для инструмента {name} содержат невалидный JSON: {json_err}. "
+                                "Пожалуйста, проверь синтаксис (кавычки, запятые, фигурные скобки) и вызови инструмент заново с правильным JSON."
+                            )
+                            print(f"📥 [RESPONSE]: {result_text}")
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": result_text
+                            })
+                            continue
+
                         print(f"📡 [MCP] Выполнение '{name}' с параметрами: {arguments}")
                         
                         try:
@@ -147,11 +167,9 @@ class AIAgent:
                                 mcp_result = await target_session.call_tool(name, arguments)
                                 result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
                                 
-                                # === НОВАЯ ЛОГИКА ===
                                 # Если инструмент отработал успешно и это update_note, ставим флаг в True
                                 if name == "update_note" and "Ошибка" not in result_text:
                                     update_note_called = True
-                                # ====================
 
                         except Exception as tool_err:
                             result_text = f"Ошибка выполнения {name}: {tool_err}"
@@ -166,7 +184,6 @@ class AIAgent:
                         })
                             
                 else:
-                    # === НОВАЯ ЛОГИКА ===
                     # Модель пытается выдать финальный ответ. Проверяем, сохранила ли она файл.
                     if not update_note_called:
                         print(f"⚠️ [Агент прерван]: Попытка завершить работу без сохранения в Obsidian. Отправка корректировки...")
@@ -175,9 +192,7 @@ class AIAgent:
                             "role": "user",
                             "content": "Ошибка: ты забыл вызвать инструмент update_note. Вызови его сейчас, передав свой финальный отчет в параметр new_content."
                         })
-                        # Пропускаем return и идем на следующую итерацию
                         continue
-                    # ====================
 
                     final_text = self._clean_output(assistant_message.content)
                     print(f"[LLM] Финальный ответ получен.")
