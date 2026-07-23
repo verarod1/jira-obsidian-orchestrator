@@ -101,6 +101,9 @@ class AIAgent:
 
             print(f"\n[MCP] Доступные инструменты: {', '.join(mcp_tools_names)}\n")
 
+            # Флаг для отслеживания вызова сохранения в Obsidian
+            update_note_called = False
+
             for i in range(max_iterations):
                 print(f"--- Итерация {i + 1} ---")
                 
@@ -143,6 +146,13 @@ class AIAgent:
                                     
                                 mcp_result = await target_session.call_tool(name, arguments)
                                 result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
+                                
+                                # === НОВАЯ ЛОГИКА ===
+                                # Если инструмент отработал успешно и это update_note, ставим флаг в True
+                                if name == "update_note" and "Ошибка" not in result_text:
+                                    update_note_called = True
+                                # ====================
+
                         except Exception as tool_err:
                             result_text = f"Ошибка выполнения {name}: {tool_err}"
                             print(f"❌ [MCP] {result_text}")
@@ -156,6 +166,19 @@ class AIAgent:
                         })
                             
                 else:
+                    # === НОВАЯ ЛОГИКА ===
+                    # Модель пытается выдать финальный ответ. Проверяем, сохранила ли она файл.
+                    if not update_note_called:
+                        print(f"⚠️ [Агент прерван]: Попытка завершить работу без сохранения в Obsidian. Отправка корректировки...")
+                        
+                        messages.append({
+                            "role": "user",
+                            "content": "Ошибка: ты забыл вызвать инструмент update_note. Вызови его сейчас, передав свой финальный отчет в параметр new_content."
+                        })
+                        # Пропускаем return и идем на следующую итерацию
+                        continue
+                    # ====================
+
                     final_text = self._clean_output(assistant_message.content)
                     print(f"[LLM] Финальный ответ получен.")
                     return final_text
