@@ -10,7 +10,7 @@ class AnalyticsApp:
         self.prompts = PromptManager()
 
     async def _handle_standup(self) -> tuple[str, str]:
-        target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")    
+        target_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")    
             
         system_prompt = self.prompts.get_standup_prompt()
         user_prompt = f"Собери данные и сформируй отчет за период начиная с {target_date}."
