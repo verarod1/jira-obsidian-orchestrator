@@ -79,6 +79,26 @@ class AIAgent:
                     print(f"❌ [MCP] Ошибка инициализации сервера {server_name}: {e}")
                     return f"Ошибка запуска среды: {e}"
 
+            local_ask_tool = {
+                "type": "function",
+                "function": {
+                    "name": "ask_user_clarification",
+                    "description": "Задает пользователю уточняющий вопрос в консоли. Используй, если найдено несколько задач и нужно понять, какую именно имел в виду пользователь.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "Сформулированный вопрос со списком найденных вариантов."
+                            }
+                        },
+                        "required": ["question"]
+                    }
+                }
+            }
+            openai_tools.append(local_ask_tool)
+            mcp_tools_names.append("ask_user_clarification (локальный)")
+
             print(f"\n[MCP] Доступные инструменты: {', '.join(mcp_tools_names)}\n")
 
             for i in range(max_iterations):
@@ -111,12 +131,18 @@ class AIAgent:
                         print(f"📡 [MCP] Выполнение '{name}' с параметрами: {arguments}")
                         
                         try:
-                            target_session = tool_to_session.get(name)
-                            if not target_session:
-                                raise ValueError(f"Инструмент '{name}' не найден.")
-                                
-                            mcp_result = await target_session.call_tool(name, arguments)
-                            result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
+                            if name == "ask_user_clarification":
+                                question = arguments.get("question", "Требуется уточнение:")
+                                print(f"\n🤖 [Агент задает вопрос]: {question}")
+                                user_reply = input("👉 Ваш ответ: ").strip()
+                                result_text = f"Пользователь ответил: {user_reply}"
+                            else:
+                                target_session = tool_to_session.get(name)
+                                if not target_session:
+                                    raise ValueError(f"Инструмент '{name}' не найден.")
+                                    
+                                mcp_result = await target_session.call_tool(name, arguments)
+                                result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
                         except Exception as tool_err:
                             result_text = f"Ошибка выполнения {name}: {tool_err}"
                             print(f"❌ [MCP] {result_text}")
