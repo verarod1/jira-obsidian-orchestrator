@@ -31,10 +31,17 @@ class AIAgent:
 
     @staticmethod
     def _clean_output(text: Optional[str]) -> str:
-        """Очищает текст от тегов рассуждений."""
+        """Очищает текст от тегов рассуждений и случайно попавших блоков инструментов."""
         if not text:
             return ""
-        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+        # Удаляем теги рассуждений <think>...</think>
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        
+        # Удаляем технологические теги и случайные артефакты вроде <|update_note|>...
+        text = re.sub(r'<\|.*?\|>.*?(?:<\/\s*\|.*?\|>|$)', '', text, flags=re.DOTALL)
+        text = re.sub(r'<\|.*?\|>', '', text)
+        
+        return text.strip()
 
     def _convert_mcp_to_openai_tool(self, mcp_tool) -> dict:
         """Конвертирует схему инструмента MCP в формат OpenAI API."""
@@ -167,7 +174,6 @@ class AIAgent:
                                 mcp_result = await target_session.call_tool(name, arguments)
                                 result_text = "".join([content.text for content in mcp_result.content if hasattr(content, 'text')])
                                 
-                                # Если инструмент отработал успешно и это update_note, ставим флаг в True
                                 if name == "update_note" and "Ошибка" not in result_text:
                                     update_note_called = True
 
@@ -184,17 +190,23 @@ class AIAgent:
                         })
                             
                 else:
-                    # Модель пытается выдать финальный ответ. Проверяем, сохранила ли она файл.
-                    if not update_note_called:
-                        print(f"⚠️ [Агент прерван]: Попытка завершить работу без сохранения в Obsidian. Отправка корректировки...")
-                        
-                        messages.append({
-                            "role": "user",
-                            "content": "Ошибка: ты забыл вызвать инструмент update_note. Вызови его сейчас, передав свой финальный отчет в параметр new_content."
-                        })
-                        continue
-
                     final_text = self._clean_output(assistant_message.content)
+                    
+                    # Если модель попыталась завершить работу текстом, но не вызвала update_note,
+                    # оркестратор делает это автоматически, используя текст отчета.
+                    if not update_note_called and final_text:
+                        print(f"⚠️ [Оркестратор]: Модель не вызвала update_note. Сохраняем отчет в Obsidian автоматически...")
+                        try:
+                            obsidian_session = tool_to_session.get("update_note")
+                            if obsidian_session:
+                                await obsidian_session.call_tool("update_note", {
+                                    "new_content": final_text,
+                                    "target_heading": "Ретроспектива"
+                                })
+                                print(f"✅ [MCP] Отчет успешно сохранен в Obsidian.")
+                        except Exception as auto_err:
+                            print(f"❌ [MCP] Не удалось автоматически сохранить отчет: {auto_err}")
+
                     print(f"[LLM] Финальный ответ получен.")
                     return final_text
                     
