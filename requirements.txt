@@ -1,4 +1,6 @@
-python-dotenv
+httpx==0.28.1
+mcp==1.28.1
+openai==2.47.0
+python-dotenv==1.2.2
+Requests==2.34.2
 markdown-it-py
-mcp
-requests
