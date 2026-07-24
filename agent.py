@@ -128,6 +128,18 @@ class AIAgent:
                     print(f"\n⚠️ Ошибка сети при обращении к LLM API: {e}")
                     print("Проверьте VPN / DNS подключение и повторите попытку.")
                     return "Запуск прерван из-за отсутствия сетевого соединения."
+                except Exception as e:
+                    print(f"\n⚠️ Непредвиденная ошибка API: {e}")
+                    return f"Запуск прерван из-за ошибки API: {e}"
+                
+                if getattr(response, 'choices', None) is None:
+                    print(f"\n❌ [LLM] Критическая ошибка: API вернуло ответ без поля 'choices'.")
+                    print(f"Сырой ответ провайдера: {response}")
+                    return "Ошибка генерации: провайдер API вернул некорректный ответ (возможно, превышен лимит контекста или произошел сбой на стороне сервера)."
+                    
+                if len(response.choices) == 0:
+                    print("\n❌ [LLM] Ошибка: API вернуло пустой массив 'choices'.")
+                    return "Ошибка генерации: модель не сгенерировала текст."
                 
                 assistant_message = response.choices[0].message
                 messages.append(assistant_message)
@@ -157,6 +169,10 @@ class AIAgent:
                                 "content": result_text
                             })
                             continue
+                        
+                        for key, value in arguments.items():
+                            if isinstance(value, str):
+                                arguments[key] = value.replace('\\n', '\n')
 
                         print(f"📡 [MCP] Выполнение '{name}' с параметрами: {arguments}")
                         
