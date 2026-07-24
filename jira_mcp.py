@@ -15,18 +15,24 @@ HEADERS = {"Accept": "application/json", "Content-Type": "application/json"}
 mcp = FastMCP("JiraTeamReviewServer")
 
 @mcp.tool()
-def search_issues(jql: str, max_results: int = 40) -> str:
+def search_issues(jql: str, max_results: int = 40, include_comments: bool = False) -> str:
     """
     Выполняет поиск задач в Jira по JQL запросу.
-    Возвращает полную сводку по задачам, включая исполнителя и последние комментарии.
-    Используй это для сбора контекста по спринтам, эпикам или ежедневным активностям.
+    Возвращает сводку по задачам. Если include_comments=True, добавляет последние комментарии.
+    Используй include_comments=True ТОЛЬКО для подготовки ежедневной сводки (Standup) и отчета по крупным задачам (Epic).
+    Для ретроспективы (Sprint Retro) вызов с include_comments=True КАТЕГОРИЧЕСКИ ЗАПРЕЩЕН.
     """
     safe_max_results = min(max_results, 40)
     url = f"{JIRA_URL}/rest/api/3/search/jql" 
+    
+    target_fields = ["summary", "status", "issuetype", "created", "assignee", "labels"]
+    if include_comments:
+        target_fields.append("comment")
+        
     payload = {
         "jql": jql,
         "maxResults": safe_max_results,
-        "fields": ["summary", "status", "issuetype", "created", "assignee", "comment", "labels"]
+        "fields": target_fields
     }
     
     response = requests.post(url, json=payload, headers=HEADERS, auth=AUTH)
@@ -65,30 +71,33 @@ def search_issues(jql: str, max_results: int = 40) -> str:
         raw_labels = fields.get('labels', [])
         clean_labels = [lbl for lbl in raw_labels if lbl != "test-seed"]
         labels_str = ", ".join(clean_labels) if clean_labels else "Нет меток"
-        comment_bundle = fields.get('comment', {})
-        comments_list = comment_bundle.get('comments', [])
-        
-        recent_comments = comments_list[-2:] if comments_list else []
-        comments_str_list = []
-        
-        for c in recent_comments:
-            author = c.get('author', {}).get('displayName', 'Неизвестный автор')
-            text = parse_adf(c.get('body', ''))
-            comments_str_list.append(f"[{author}]: {text}")
-            
-        comments_summary = " | ".join(comments_str_list) if comments_str_list else "Нет комментариев"
         
         issue_str = (
             f"[{key}] {summary} | Статус: {status} | Тип: {issuetype} | Метки: {labels_str} | "
-            f"Исполнитель: {assignee} | Создано: {created} | Последние комментарии: {comments_summary}"
+            f"Исполнитель: {assignee} | Создано: {created}"
         )
+        
+        if include_comments:
+            comment_bundle = fields.get('comment', {})
+            comments_list = comment_bundle.get('comments', [])
+            
+            recent_comments = comments_list[-2:] if comments_list else []
+            comments_str_list = []
+            
+            for c in recent_comments:
+                author = c.get('author', {}).get('displayName', 'Неизвестный автор')
+                text = parse_adf(c.get('body', ''))
+                comments_str_list.append(f"[{author}]: {text}")
+                
+            comments_summary = " | ".join(comments_str_list) if comments_str_list else "Нет комментариев"
+            issue_str += f" | Последние комментарии: {comments_summary}"
+            
         result.append(issue_str)
         
     if not result:
         return "Задачи по данному JQL-запросу не найдены."
         
     return "\n".join(result)
-
 
 @mcp.tool()
 def get_comments(issue_key: str) -> str:
@@ -133,7 +142,6 @@ def get_comments(issue_key: str) -> str:
         return f"У задачи {issue_key} нет комментариев."
         
     return "\n".join(result)
-
 
 if __name__ == "__main__":
     mcp.run()
